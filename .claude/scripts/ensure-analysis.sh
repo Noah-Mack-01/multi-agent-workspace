@@ -18,7 +18,7 @@ if [ -z "$1" ]; then
 fi
 
 REPO_PATH="$(cd "$1" && pwd -P)" || { echo "Error: Directory does not exist: $1" >&2; exit 1; }
-REPO_NAME="$(basename "$REPO_PATH")"
+REPO_NAME="$(basename "$REPO_PATH" .git)"
 OUTPUT_DIR="${2:-$WORKSPACE_ROOT/analysis}"
 DATA_DIR="$OUTPUT_DIR/$REPO_NAME"
 

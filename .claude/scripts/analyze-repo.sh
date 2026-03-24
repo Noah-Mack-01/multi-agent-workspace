@@ -57,7 +57,7 @@ parse_args() {
   fi
 
   REPO_PATH="$(cd "$1" && pwd -P)"
-  REPO_NAME="$(basename "$REPO_PATH")"
+  REPO_NAME="$(basename "$REPO_PATH" .git)"
   OUTPUT_DIR="${2:-$(cd "$SCRIPT_DIR/../.." && pwd)/analysis}"
   TMP_DIR=$(mktemp -d)
 }
