@@ -1,1 +1,5 @@
 .claude/specs/*
+.claude/settings.local.json
+analysis/
+worktrees/*
+repositories/
