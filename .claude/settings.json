@@ -1,29 +1,33 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git :*)",
-      "Bash(bun :*)",
-      "Bash(pnpm :*)",
-      "Bash(gh :*)",
-      "Bash(linear :*)",
-      "Bash(jira :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/init-worktree.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/sync-main.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/verify-sync.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/create-worktree.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/remove-worktree.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/list-worktrees.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/clone-repo.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/analyze-repo.sh :*)",
-      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/ensure-analysis.sh :*)",
+      "Bash(git:*)",
+      "Bash(bun:*)",
+      "Bash(pnpm:*)",
+      "Bash(npm:*)",
+      "Bash(go:*)",
+      "Bash(gh:*)",
+      "Bash(linear:*)",
+      "Bash(jira:*)",
+      "Bash(ls:*)",
+      "Bash(basename:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/init-worktree.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/sync-main.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/verify-sync.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/create-worktree.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/remove-worktree.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/list-worktrees.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/clone-repo.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/analyze-repo.sh:*)",
+      "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/ensure-analysis.sh:*)",
       "Bash($CLAUDE_PROJECT_DIR/.claude/scripts/test-workflow.sh)"
     ],
     "deny": [
-      "Bash(git push --force :*)",
-      "Bash(git push -f :*)",
-      "Bash(git reset --hard :*)",
-      "Bash(git clean -f :*)",
-      "Bash(rm -rf :*)"
+      "Bash(git push --force)",
+      "Bash(git push -f)",
+      "Bash(git reset --hard)",
+      "Bash(git clean -f)",
+      "Bash(rm -rf)"
     ]
   },
   "hooks": {
