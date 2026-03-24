@@ -87,14 +87,36 @@ Given arguments `$ARGUMENTS` (format: `<worktree-path> <ticket-url>`):
 
    If the plan has no explicit phases section, treat all work units as a single phase (fully parallel).
 
-6. **Run tests**: After all phases complete, detect and run the test suite from the worktree:
+6. **Reconcile**: After all phases complete, verify the independently-built pieces integrate correctly. For each signature boundary in `signatures.md`:
+
+   a. **Read both sides**: Read the file that exposes the signature and the file that consumes it.
+   b. **Verify the contract**:
+      - Does the exported symbol exist with the expected name and kind?
+      - Does the consumer import/reference it correctly?
+      - Do the types align? (e.g., if the signature says `function createUser(name: string): Promise<User>`, does the consumer call it with a string and handle a Promise<User>?)
+   c. **Check imports**: For each cross-unit dependency, verify the import statement exists and resolves to the correct file path.
+   d. **Fix mismatches**: If you find:
+      - A missing import → add it
+      - A wrong import path → correct it
+      - A minor type mismatch (e.g., consumer expects `string` but producer returns `string | null`) → fix the consumer to handle the actual type
+      - A renamed symbol → update the consumer's reference
+      - A signature that was implemented differently than specified → flag it but do NOT change the implementation (the agent may have had a good reason)
+   e. **Check for orphaned references**: Look for references to symbols that were supposed to be implemented by another work unit but weren't.
+
+   If no issues are found, note "Reconciliation clean — all contracts verified."
+
+   If issues were found and fixed, list each fix. If issues were found that couldn't be auto-fixed, flag them as **requires manual attention**.
+
+7. **Run tests**: Detect and run the test suite from the worktree:
    - If `bun.lockb` exists → `bun test`
    - If `pnpm-lock.yaml` exists → `pnpm test`
    - If `go.mod` exists → `go test ./...`
    - If `package.json` exists with a `test` script → `npm test`
    - If none detected → skip, note "no test suite detected"
 
-7. **Report results**: Summarize the parallel build:
+   If tests fail, read the failure output and attempt to fix the issues. Re-run tests after fixes. If tests still fail after one fix attempt, report the remaining failures.
+
+8. **Report results**: Summarize the parallel build:
 
    ```
    ## Parallel Build Complete
@@ -110,11 +132,14 @@ Given arguments `$ARGUMENTS` (format: `<worktree-path> <ticket-url>`):
    | WU-1      | [list]        | [status] |
    | WU-2      | [list]        | [status] |
 
+   ### Reconciliation
+   [List of fixes applied, or "All contracts verified — no fixes needed"]
+
    ### Issues
-   [Any contract violations, agent errors, or files modified by multiple agents]
+   [Any contract violations that couldn't be auto-fixed, agent errors, or files modified by multiple agents]
 
    ### Test Results
-   [Test output or "no test suite detected"]
+   [Test output, fixes applied, or "no test suite detected"]
    ```
 
-   If any agent reported issues with signatures it couldn't implement, flag these as **contract violations** requiring manual attention.
+   If any issues remain unresolved, flag them as **requires manual attention**.
