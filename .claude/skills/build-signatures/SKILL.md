@@ -45,6 +45,8 @@ For each boundary symbol, record:
 
 If a coupled pair shares no exported symbols (they only co-change together), flag it as "co-change coupled, no shared interface" and list it separately.
 
+For each boundary, check `file_groups.txt` to determine the groups of the two files. If the groups differ AND both groups match a submodule declared path (i.e., neither is `(root)` or a plain top-level directory group that doesn't correspond to a submodule path), tag the boundary as `Cross-Submodule: yes` and record `Source Submodule` and `Target Submodule` from the respective groups.
+
 **Step 6: Group into work units**
 
 Using the coupling graph from Step 3:
@@ -52,6 +54,7 @@ Using the coupling graph from Step 3:
 - Files with no coupling to any other file are independent — each can be its own parallel work unit.
 - If there are circular dependencies between work units, flag them and recommend which edge to break (prefer breaking the direction with fewer dependents).
 - Label work units as WU-1, WU-2, etc., sorted by file count descending.
+- For each work unit, determine its **Submodule** field: look up each file's group in `file_groups.txt` and use the majority group. If that group corresponds to a submodule declared path, set `Submodule: <path>`; otherwise set `Submodule: (root)`.
 - Determine a phased execution order: Phase 1 = units with no incoming dependencies, Phase 2 = units depending only on Phase 1, etc.
 
 **Step 7: Write output**
@@ -62,12 +65,13 @@ Write two files to the data directory (same directory from Step 1):
 
 **`signatures.md`** with these sections:
 - Header: repo name, commit hash, number of coupled pairs analyzed, number of boundary signatures found
-- **Boundaries**: For each coupled pair, a subsection with a table of boundary symbols (Symbol, Kind, Direction, Signature)
+- **Boundaries**: For each coupled pair, a subsection with a table of boundary symbols (Symbol, Kind, Direction, Signature). For cross-submodule boundaries, add `Cross-Submodule: yes | Source Submodule: <path> | Target Submodule: <path>` as a header line above the table.
 - **Co-Change Only**: Table of pairs with no shared interface (File A, File B, Co-changes)
+- **Cross-Submodule Boundaries**: A summary subsection listing all boundaries where `Cross-Submodule: yes`, with columns (File A, File B, Source Submodule, Target Submodule)
 
 **`parallel-plan.md`** with these sections:
 - Header: repo name, commit hash, total work units count
-- **Work Units**: For each unit — label, files list, "Exposes" table (symbols other units depend on), "Consumes" table (symbols this unit needs from others)
+- **Work Units**: For each unit — label, `**Submodule:** <path or "(root)">`, files list, "Exposes" table (symbols other units depend on), "Consumes" table (symbols this unit needs from others). Annotate cross-submodule entries in Consumes/Exposes tables with `[cross-submodule]`.
 - **Dependency Graph**: Mermaid `graph LR` showing inter-unit dependencies labeled with symbol names
 - **Execution Phases**: Numbered phases showing which units can run in parallel at each stage
 - **Circular Dependencies**: Table of cycles with break recommendations (if any)

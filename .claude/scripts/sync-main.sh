@@ -75,4 +75,70 @@ else
   exit 1
 fi
 
+# ---------- Submodule Pointer Sync ----------
+
+sync_submodule_pointers() {
+  local worktree="$1"
+
+  local common_dir
+  common_dir=$(git -C "$worktree" rev-parse --git-common-dir 2>/dev/null) || return 0
+  common_dir=$(cd "$worktree" && cd "$common_dir" && pwd -P)
+  local parent_name
+  parent_name=$(basename "$common_dir" .git)
+
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  local workspace_root="${WORKSPACE_ROOT:-$(cd "$script_dir/../.." && pwd)}"
+  local registry="$workspace_root/repositories/$parent_name.submodules"
+
+  [ -f "$registry" ] || return 0
+
+  while IFS=$'\t' read -r sub_name sub_bare sub_path; do
+    [[ "$sub_name" == \#* ]] && continue
+    [ -z "$sub_name" ] && continue
+
+    local sub_dir="$worktree/$sub_path"
+
+    if [ ! -d "$sub_dir" ]; then
+      echo "  Warning: submodule worktree '$sub_path' does not exist — skipping pointer sync."
+      continue
+    fi
+
+    local new_sha
+    new_sha=$(git -C "$worktree" ls-tree HEAD "$sub_path" 2>/dev/null | awk '{print $3}')
+    if [ -z "$new_sha" ]; then
+      echo "  Warning: could not read pointer SHA for submodule '$sub_path' — skipping."
+      continue
+    fi
+
+    local current_sha
+    current_sha=$(git -C "$sub_dir" rev-parse HEAD 2>/dev/null) || current_sha=""
+
+    if [ "$new_sha" = "$current_sha" ]; then
+      echo "  Submodule '$sub_path' already at $new_sha — no update needed."
+      continue
+    fi
+
+    echo "  Updating submodule '$sub_path': $current_sha → $new_sha"
+
+    # Ensure SHA is present locally; fetch if not
+    if ! git -C "$sub_bare" cat-file -e "$new_sha" 2>/dev/null; then
+      echo "  Fetching submodule '$sub_name' to resolve $new_sha..."
+      if ! git -C "$sub_bare" fetch origin; then
+        echo "Error: Could not fetch submodule '$sub_name'" >&2
+        exit 1
+      fi
+      if ! git -C "$sub_bare" cat-file -e "$new_sha" 2>/dev/null; then
+        echo "Error: SHA $new_sha for submodule '$sub_name' not found after fetch." >&2
+        exit 1
+      fi
+    fi
+
+    git -C "$sub_dir" checkout "$new_sha"
+    echo "  Submodule '$sub_path' updated to $new_sha"
+  done < "$registry"
+}
+
+sync_submodule_pointers "$WORKTREE_PATH"
+
 exit 0

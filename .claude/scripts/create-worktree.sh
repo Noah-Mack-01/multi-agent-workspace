@@ -60,7 +60,61 @@ else
   git -C "$REPO_PATH" worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME"
 fi
 
-echo "Worktree created. Installing dependencies..."
+# ---------- Submodule Worktrees ----------
+
+init_submodule_worktrees() {
+  local parent_worktree="$1"
+  local parent_name
+  parent_name=$(basename "$REPO_PATH" .git)
+  local registry="$WORKSPACE_ROOT/repositories/$parent_name.submodules"
+
+  [ -f "$registry" ] || return 0
+
+  while IFS=$'\t' read -r sub_name sub_bare sub_path; do
+    # Skip comment lines
+    [[ "$sub_name" == \#* ]] && continue
+    [ -z "$sub_name" ] && continue
+
+    local target="$parent_worktree/$sub_path"
+
+    # Guard: already exists and non-empty
+    if [ -d "$target" ] && [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+      echo "  Warning: submodule path '$sub_path' already exists and is non-empty — skipping."
+      continue
+    fi
+
+    # Resolve the gitlink SHA from the parent worktree
+    local sha
+    sha=$(git -C "$parent_worktree" ls-tree HEAD "$sub_path" 2>/dev/null | awk '{print $3}')
+    if [ -z "$sha" ]; then
+      echo "  Warning: could not resolve pointer SHA for submodule '$sub_path' — skipping."
+      continue
+    fi
+
+    echo "  Initializing submodule worktree '$sub_path' at $sha..."
+
+    # Ensure the SHA is present in the bare repo; fetch if not
+    if ! git -C "$sub_bare" cat-file -e "$sha" 2>/dev/null; then
+      echo "  SHA $sha not found locally — fetching submodule '$sub_name'..."
+      if ! git -C "$sub_bare" fetch origin >&2; then
+        echo "Error: Could not fetch submodule '$sub_name' to resolve SHA $sha" >&2
+        exit 1
+      fi
+      if ! git -C "$sub_bare" cat-file -e "$sha" 2>/dev/null; then
+        echo "Error: SHA $sha for submodule '$sub_name' not found even after fetch." >&2
+        exit 1
+      fi
+    fi
+
+    mkdir -p "$(dirname "$target")"
+    git -C "$sub_bare" worktree add --detach "$target" "$sha"
+  done < "$registry"
+}
+
+echo "Worktree created. Initializing submodule worktrees..."
+init_submodule_worktrees "$WORKTREE_PATH"
+
+echo "Installing dependencies..."
 
 # Run init-worktree.sh to install dependencies
 if ! "$SCRIPT_DIR/init-worktree.sh" "$WORKTREE_PATH"; then

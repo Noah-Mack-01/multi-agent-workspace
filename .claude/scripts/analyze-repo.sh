@@ -70,6 +70,45 @@ validate_repo() {
   git -C "$REPO_PATH" rev-parse HEAD >/dev/null 2>&1 || die "Repository has no commits"
 }
 
+# ---------- Submodule Detection ----------
+
+# detect_submodules <repo-path>
+# Outputs lines of <name>\t<declared-path> for each submodule.
+# Works on both live worktrees (reads file directly) and bare repos (git show).
+detect_submodules() {
+  local repo="$1"
+  local raw=""
+
+  if [ -f "$repo/.gitmodules" ]; then
+    raw=$(cat "$repo/.gitmodules")
+  else
+    raw=$(git -C "$repo" show HEAD:.gitmodules 2>/dev/null) || return 0
+  fi
+  [ -z "$raw" ] && return 0
+
+  local name="" path=""
+  while IFS= read -r line; do
+    case "$line" in
+      *'[submodule '*)
+        if [ -n "$name" ] && [ -n "$path" ]; then
+          printf '%s\t%s\n' "$name" "$path"
+        fi
+        name=$(echo "$line" | sed 's/.*\[submodule "\(.*\)"\].*/\1/')
+        path=""
+        ;;
+      *'path '*)
+        path=$(echo "$line" | sed 's/.*path *= *\(.*\)/\1/' | tr -d '[:space:]')
+        ;;
+    esac
+  done <<< "$raw"
+
+  if [ -n "$name" ] && [ -n "$path" ]; then
+    printf '%s\t%s\n' "$name" "$path"
+  fi
+}
+
+SUBMODULE_PATHS=""  # tab-separated list of declared paths, set after detection
+
 # ---------- Step 1: Language Detection ----------
 
 detect_language() {
@@ -130,6 +169,29 @@ list_tracked_files() {
     ':!*.min.js' ':!*.min.css' ':!*.bundle.js' ':!*.chunk.js' \
     ':!*.generated.*' ':!*_generated.*' ':!*.pb.go' \
     2>/dev/null | sort > "$TMP_DIR/file_list.txt"
+
+  # Append submodule files, prefixed with their declared path
+  local submodules
+  submodules=$(detect_submodules "$REPO_PATH")
+  SUBMODULE_PATHS=""
+  if [ -n "$submodules" ]; then
+    while IFS=$'\t' read -r sub_name sub_path; do
+      local sub_dir="$REPO_PATH/$sub_path"
+      if [ ! -d "$sub_dir" ] || [ -z "$(ls -A "$sub_dir" 2>/dev/null)" ]; then
+        echo "  Warning: submodule '$sub_path' is empty or missing — skipping." >&2
+        continue
+      fi
+      git -C "$sub_dir" ls-files -- \
+        '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' \
+        '*.go' \
+        ':!node_modules' ':!vendor' ':!dist' ':!build' ':!.next' ':!coverage' \
+        ':!*.min.js' ':!*.min.css' ':!*.bundle.js' ':!*.chunk.js' \
+        ':!*.generated.*' ':!*_generated.*' ':!*.pb.go' \
+        2>/dev/null | sed "s|^|$sub_path/|" >> "$TMP_DIR/file_list.txt"
+      SUBMODULE_PATHS="$SUBMODULE_PATHS$sub_path\t"
+    done <<< "$submodules"
+    sort -u "$TMP_DIR/file_list.txt" -o "$TMP_DIR/file_list.txt"
+  fi
 
   FILE_LIST="$TMP_DIR/file_list.txt"
   FILE_COUNT=$(wc -l < "$FILE_LIST" | tr -d ' ')
@@ -315,9 +377,26 @@ extract_cochange() {
 # ---------- Step 5: Group Computation ----------
 
 compute_groups() {
-  awk -F/ -v is_monorepo="$IS_MONOREPO" '
+  awk -F/ -v is_monorepo="$IS_MONOREPO" -v sub_paths="$SUBMODULE_PATHS" '
+  BEGIN {
+    # Build submodule path lookup from tab-separated list
+    n = split(sub_paths, subs, "\t")
+    for (i = 1; i <= n; i++) {
+      if (subs[i] != "") sub_lookup[subs[i]] = 1
+    }
+  }
   {
-    if (is_monorepo == "true" && \
+    file = $0
+    matched_sub = ""
+    # Check if file starts with any declared submodule path
+    for (sp in sub_lookup) {
+      if (index(file, sp "/") == 1) {
+        if (length(sp) > length(matched_sub)) matched_sub = sp
+      }
+    }
+    if (matched_sub != "") {
+      group = matched_sub
+    } else if (is_monorepo == "true" && \
         ($1 == "packages" || $1 == "apps" || $1 == "libs" || \
          $1 == "services" || $1 == "modules")) {
       if (NF >= 3) {
@@ -435,6 +514,12 @@ generate_report() {
     echo "| Import edges | $IMPORT_EDGE_COUNT |"
     echo "| Co-change pairs | $COCHANGE_PAIR_COUNT |"
     echo "| Commits analyzed | $MAX_COMMITS |"
+    if [ -n "$SUBMODULE_PATHS" ]; then
+      local sub_count
+      sub_count=$(echo -e "$SUBMODULE_PATHS" | tr '\t' '\n' | grep -c '.' || true)
+      echo ""
+      echo "> **Submodules:** $sub_count detected. Cross-submodule co-change data unavailable — import edges only."
+    fi
     echo ""
 
     # Coupling Groups

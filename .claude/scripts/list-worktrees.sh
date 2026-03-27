@@ -11,6 +11,30 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 REPO_PATH="$1"
 
+# print_submodule_worktrees <parent-worktree-path> <parent-repo-name>
+# Prints indented submodule worktree entries under a parent worktree line.
+print_submodule_worktrees() {
+  local wt_path="$1"
+  local parent_name="$2"
+  local registry="$WORKSPACE_ROOT/repositories/$parent_name.submodules"
+
+  [ -f "$registry" ] || return 0
+
+  while IFS=$'\t' read -r sub_name sub_bare sub_path; do
+    [[ "$sub_name" == \#* ]] && continue
+    [ -z "$sub_name" ] && continue
+
+    local sub_dir="$wt_path/$sub_path"
+    if [ -d "$sub_dir" ] && [ -n "$(ls -A "$sub_dir" 2>/dev/null)" ]; then
+      local sha
+      sha=$(git -C "$sub_dir" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+      echo "  └─ $sub_path    HEAD: $sha (detached)"
+    else
+      echo "  └─ $sub_path    (not initialized)"
+    fi
+  done < "$registry"
+}
+
 # List worktrees for a single repo
 list_for_repo() {
   local repo="$1"
@@ -80,6 +104,11 @@ list_for_repo() {
           elif [ "$branch" = "$main_branch" ]; then
             echo "Synced: n/a (is $main_branch)"
           fi
+
+          # Show submodule worktrees
+          local repo_name
+          repo_name=$(basename "$repo" .git)
+          print_submodule_worktrees "$wt_path" "$repo_name"
         fi
         echo "---"
       fi

@@ -31,8 +31,8 @@ Given arguments `$ARGUMENTS` (format: `<worktree-path> <ticket-url>`):
    If either file is missing, run `/build-signatures` on the repository first (determine the repo path from the worktree's git config), then re-read the files.
 
 4. **Read the parallel plan and signatures**: Read both files completely.
-   - From `parallel-plan.md`, extract: the list of work units (with their file lists, exposed signatures, and consumed signatures) and the execution phases.
-   - From `signatures.md`, extract: the full signature details for each boundary (symbol name, kind, direction, full signature text).
+   - From `parallel-plan.md`, extract: the list of work units (with their file lists, exposed signatures, consumed signatures, and **Submodule** field) and the execution phases.
+   - From `signatures.md`, extract: the full signature details for each boundary (symbol name, kind, direction, full signature text). Note any boundaries marked `Cross-Submodule: yes`.
 
 5. **Dispatch agents by phase**: For each execution phase listed in `parallel-plan.md`:
 
@@ -47,6 +47,11 @@ Given arguments `$ARGUMENTS` (format: `<worktree-path> <ticket-url>`):
    ## Ticket
    **[ticket title]**
    [ticket description]
+
+   ## Submodule Scope
+   This work unit belongs to submodule: [Submodule field from parallel-plan.md — e.g. "libs/auth" or "(root)"]
+   Your files are located at: [worktree-path]/[submodule-path]/
+   If the submodule is "(root)", work directly in the worktree root.
 
    ## Your File Scope
    You may ONLY create or modify these files:
@@ -109,6 +114,7 @@ Given arguments `$ARGUMENTS` (format: `<worktree-path> <ticket-url>`):
       - A renamed symbol → update the consumer's reference
       - A signature that was implemented differently than specified → flag it but do NOT change the implementation (the agent may have had a good reason)
    e. **Check for orphaned references**: Look for references to symbols that were supposed to be implemented by another work unit but weren't.
+   f. **Cross-submodule import paths**: For each boundary marked `Cross-Submodule: yes` in `signatures.md`, verify that the consuming file's import statement uses the correct relative path that crosses the submodule directory boundary (e.g. `../../libs/auth/src/index`). If the import path is wrong or missing, add or correct it.
 
    If no issues are found, note "Reconciliation clean — all contracts verified."
 
