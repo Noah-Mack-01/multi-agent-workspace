@@ -464,6 +464,222 @@ fi
 
 echo ""
 
+# ---------- Submodule Fixture Helper ----------
+
+# create_submodule_fixture <workspace-dir>
+# Creates:
+#   <workspace-dir>/sub-remote.git    — bare submodule repo with one .ts file
+#   <workspace-dir>/parent-remote.git — bare parent repo with .gitmodules + gitlink
+# Sets globals: SUB_REMOTE_DIR, PARENT_REMOTE_DIR, SUB_HEAD_SHA
+create_submodule_fixture() {
+  local ws="$1"
+
+  # --- Submodule repo ---
+  SUB_REMOTE_DIR="$ws/sub-remote.git"
+  local sub_work="$ws/sub-work"
+  git init "$sub_work" >/dev/null 2>&1
+  cd "$sub_work"
+  git config user.email "test@test.com"
+  git config user.name "Test User"
+  mkdir -p src
+  echo 'export function hello(): string { return "hi"; }' > src/index.ts
+  git add .
+  git commit -m "submodule initial" >/dev/null 2>&1
+  git clone --bare "$sub_work" "$SUB_REMOTE_DIR" >/dev/null 2>&1
+  SUB_HEAD_SHA=$(git -C "$SUB_REMOTE_DIR" rev-parse HEAD)
+
+  # --- Parent repo ---
+  PARENT_REMOTE_DIR="$ws/parent-remote.git"
+  local parent_work="$ws/parent-work"
+  git init "$parent_work" >/dev/null 2>&1
+  cd "$parent_work"
+  git config user.email "test@test.com"
+  git config user.name "Test User"
+
+  # Write .gitmodules
+  cat > .gitmodules <<EOF
+[submodule "sub-lib"]
+	path = libs/sub
+	url = file://$SUB_REMOTE_DIR
+EOF
+
+  # Add gitlink entry (manually stage the submodule pointer)
+  mkdir -p libs/sub
+  git -C "$parent_work" update-index --add --cacheinfo "160000,$SUB_HEAD_SHA,libs/sub"
+
+  git add .gitmodules
+  git commit -m "parent initial with submodule" >/dev/null 2>&1
+  git clone --bare "$parent_work" "$PARENT_REMOTE_DIR" >/dev/null 2>&1
+
+  cd "$ws"
+}
+
+# ---------- Test 15: clone-repo.sh submodule registration ----------
+
+echo "--- Test 15: clone-repo.sh submodule registration ---"
+
+SUB_WS="$TEST_DIR/submodule-tests"
+mkdir -p "$SUB_WS"
+create_submodule_fixture "$SUB_WS"
+
+PARENT_URL="file://$PARENT_REMOTE_DIR"
+CLONE_OUT=$("$SCRIPT_DIR/clone-repo.sh" "$PARENT_URL" 2>&1)
+CLONE_EC=$?
+
+if [ $CLONE_EC -eq 0 ]; then
+  pass "clone-repo.sh succeeded with submodule parent"
+else
+  fail "clone-repo.sh failed: $CLONE_OUT"
+fi
+
+# Submodule bare repo should be registered
+EXPECTED_SUB_BARE="$TEST_DIR/repositories/sub-remote.git"
+if [ -d "$EXPECTED_SUB_BARE" ] && git -C "$EXPECTED_SUB_BARE" rev-parse --git-dir &>/dev/null; then
+  pass "Submodule bare repo created at repositories/sub-remote.git"
+else
+  fail "Submodule bare repo not found at $EXPECTED_SUB_BARE"
+fi
+
+# Registry file should exist
+PARENT_REGISTRY="$TEST_DIR/repositories/parent-remote.submodules"
+if [ -f "$PARENT_REGISTRY" ]; then
+  pass "Submodule registry file created"
+else
+  fail "Submodule registry file not found at $PARENT_REGISTRY"
+fi
+
+# Registry should contain correct sub-lib entry
+if grep -q "sub-lib" "$PARENT_REGISTRY" && grep -q "libs/sub" "$PARENT_REGISTRY"; then
+  pass "Registry contains correct submodule name and declared path"
+else
+  fail "Registry content unexpected: $(cat "$PARENT_REGISTRY" 2>/dev/null)"
+fi
+
+# Idempotent re-run should regenerate registry without error
+RECLONE_OUT=$("$SCRIPT_DIR/clone-repo.sh" "$PARENT_URL" 2>&1)
+if [ $? -eq 0 ] && [ -f "$PARENT_REGISTRY" ]; then
+  pass "Idempotent re-clone regenerates registry"
+else
+  fail "Idempotent re-clone failed: $RECLONE_OUT"
+fi
+
+# Repo with no .gitmodules should produce no registry
+NO_SUB_URL="file://$TEST_DIR/remote.git"
+"$SCRIPT_DIR/clone-repo.sh" "$NO_SUB_URL" >/dev/null 2>&1 || true
+NO_SUB_REGISTRY="$TEST_DIR/repositories/remote.submodules"
+if [ ! -f "$NO_SUB_REGISTRY" ]; then
+  pass "No registry file for repo without submodules"
+else
+  fail "Unexpected registry file created for repo without submodules"
+fi
+
+echo ""
+
+# ---------- Test 16: create-worktree.sh submodule worktree ----------
+
+echo "--- Test 16: create-worktree.sh submodule worktree ---"
+
+PARENT_BARE="$TEST_DIR/repositories/parent-remote.git"
+SUB_WT_DIR="$TEST_DIR/subworktrees"
+
+if "$SCRIPT_DIR/create-worktree.sh" "$PARENT_BARE" "feature/sub-test" "$SUB_WT_DIR" >/dev/null 2>&1; then
+  PARENT_WT="$SUB_WT_DIR/feature/sub-test"
+
+  if [ -d "$PARENT_WT" ]; then
+    pass "Parent worktree created"
+  else
+    fail "Parent worktree directory not found"
+  fi
+
+  SUB_WT="$PARENT_WT/libs/sub"
+  if [ -d "$SUB_WT" ] && [ -n "$(ls -A "$SUB_WT" 2>/dev/null)" ]; then
+    pass "Submodule worktree created inside parent worktree"
+  else
+    fail "Submodule worktree not found at $SUB_WT"
+  fi
+
+  ACTUAL_SHA=$(git -C "$SUB_WT" rev-parse HEAD 2>/dev/null || echo "")
+  if [ "$ACTUAL_SHA" = "$SUB_HEAD_SHA" ]; then
+    pass "Submodule worktree checked out at correct pointer SHA"
+  else
+    fail "Expected SHA $SUB_HEAD_SHA, got $ACTUAL_SHA"
+  fi
+else
+  fail "create-worktree.sh failed for parent with submodule"
+fi
+
+echo ""
+
+# ---------- Test 17: remove-worktree.sh removes submodule worktrees ----------
+
+echo "--- Test 17: remove-worktree.sh removes submodule worktrees first ---"
+
+PARENT_WT_17="$SUB_WT_DIR/feature/sub-test"
+if [ -d "$PARENT_WT_17" ]; then
+  SUB_BARE_17="$TEST_DIR/repositories/sub-remote.git"
+
+  if "$SCRIPT_DIR/remove-worktree.sh" "$PARENT_WT_17" >/dev/null 2>&1; then
+    if [ ! -d "$PARENT_WT_17" ]; then
+      pass "Parent worktree directory removed"
+    else
+      fail "Parent worktree directory still exists"
+    fi
+
+    if ! git -C "$SUB_BARE_17" worktree list --porcelain 2>/dev/null | grep -qF "feature/sub-test"; then
+      pass "Submodule worktree unregistered from bare repo"
+    else
+      fail "Submodule worktree still registered in bare repo"
+    fi
+  else
+    fail "remove-worktree.sh failed for parent with submodule"
+  fi
+else
+  fail "Prerequisite: parent worktree from test 16 not found"
+fi
+
+echo ""
+
+# ---------- Test 18: analyze-repo.sh includes submodule files ----------
+
+echo "--- Test 18: analyze-repo.sh includes submodule files ---"
+
+# Create a fresh worktree with submodule initialized for analysis
+ANALYZE_SUB_DIR="$TEST_DIR/analyze-subworktrees"
+PARENT_BARE_18="$TEST_DIR/repositories/parent-remote.git"
+
+if "$SCRIPT_DIR/create-worktree.sh" "$PARENT_BARE_18" "feature/analyze-sub" "$ANALYZE_SUB_DIR" >/dev/null 2>&1; then
+  ANALYZE_WT="$ANALYZE_SUB_DIR/feature/analyze-sub"
+  ANALYSIS_SUB_DIR="$TEST_DIR/analysis-sub"
+
+  if "$SCRIPT_DIR/analyze-repo.sh" "$ANALYZE_WT" "$ANALYSIS_SUB_DIR" >/dev/null 2>&1; then
+    DATA_SUB_DIR="$ANALYSIS_SUB_DIR/feature"  # basename of worktree is "feature" due to branch name
+    # The repo name is derived from basename of the worktree path
+    REPO_BASENAME=$(basename "$ANALYZE_WT")
+    DATA_SUB_DIR="$ANALYSIS_SUB_DIR/$REPO_BASENAME"
+
+    if [ -f "$DATA_SUB_DIR/file_groups.txt" ]; then
+      pass "file_groups.txt produced for submodule-containing worktree"
+
+      if grep -q "libs/sub" "$DATA_SUB_DIR/file_groups.txt"; then
+        pass "Submodule files appear in file_groups.txt with submodule path prefix"
+      else
+        fail "Submodule files not found in file_groups.txt (content: $(cat "$DATA_SUB_DIR/file_groups.txt"))"
+      fi
+    else
+      fail "file_groups.txt not produced at $DATA_SUB_DIR"
+    fi
+  else
+    fail "analyze-repo.sh failed on submodule worktree"
+  fi
+
+  # Clean up this worktree
+  "$SCRIPT_DIR/remove-worktree.sh" "$ANALYZE_WT" --force >/dev/null 2>&1 || true
+else
+  fail "create-worktree.sh failed creating worktree for analyze test"
+fi
+
+echo ""
+
 # ---------- Summary ----------
 
 echo "========================================="

@@ -1,0 +1,4 @@
+# Always excluded from search (respected even when respectGitignore: false)
+node_modules/
+.git/
+*.log
