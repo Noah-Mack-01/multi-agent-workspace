@@ -31,8 +31,15 @@ if [ -z "$REPO_COMMON" ]; then
   echo "Error: Could not determine parent repository for: $WORKTREE_PATH"
   exit 1
 fi
-# --git-common-dir returns path to the shared .git dir; repo root is its parent
-REPO_ROOT="$(cd "$WORKTREE_PATH" && cd "$REPO_COMMON/.." && pwd -P)"
+# Resolve common dir to absolute path
+REPO_COMMON="$(cd "$WORKTREE_PATH" && cd "$REPO_COMMON" && pwd -P)"
+# For bare repos, the common dir IS the repo root; for non-bare, go up one level from .git/
+IS_BARE=$(git -C "$REPO_COMMON" rev-parse --is-bare-repository 2>/dev/null || echo "false")
+if [ "$IS_BARE" = "true" ]; then
+  REPO_ROOT="$REPO_COMMON"
+else
+  REPO_ROOT="$(dirname "$REPO_COMMON")"
+fi
 
 # Verify the worktree is registered in the parent repo
 if ! git -C "$REPO_ROOT" worktree list --porcelain | grep -q "worktree $WORKTREE_PATH$"; then
