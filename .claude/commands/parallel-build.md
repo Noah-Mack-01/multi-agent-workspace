@@ -1,10 +1,17 @@
 Implement a feature in parallel using the work plan from `/build-signatures`.
 
+**Usage:** `/parallel-build <worktree-path> <ticket-url>`
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `worktree-path` | yes | Path to the worktree to build in — relative to the workspace root or absolute (e.g. `worktrees/feature/42-add-auth`) |
+| `ticket-url` | yes | URL of the ticket being implemented — GitHub Issue, Linear, or Jira |
+
 **Important:** All script paths and analysis file paths must use `$CLAUDE_PROJECT_DIR` as the root. Do NOT use relative paths — you may be running from inside a worktree.
 
 Given arguments `$ARGUMENTS` (format: `<worktree-path> <ticket-url>`):
 
-1. **Parse arguments**: Split into `<worktree-path>` (first argument) and `<ticket-url>` (second argument). If either is missing, tell the user both are required. Resolve `<worktree-path>` to an absolute path.
+1. **Parse arguments**: Split into `<worktree-path>` (first argument) and `<ticket-url>` (second argument). If either is missing, stop and tell the user: "Usage: `/parallel-build <worktree-path> <ticket-url>` — both arguments are required. `worktree-path` is the path to an existing worktree (e.g. `worktrees/feature/42-add-auth`); `ticket-url` is a GitHub Issue, Linear, or Jira ticket URL." Resolve `<worktree-path>` to an absolute path.
 
 2. **Fetch ticket details**: Parse the ticket URL to detect the platform and fetch the ticket:
    - `github.com/<owner>/<repo>/issues/<number>` → Run `gh issue view <number> --repo <owner>/<repo>`
